@@ -1,11 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Use variáveis de ambiente (Vite) para evitar expor chaves em código-fonte
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY não definidos. Configure .env.local com as credenciais do Supabase.');
-}
+const supabaseUrl = 'https://xdsoctyzmsxbhtjehsqd.supabase.co'
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhkc29jdHl6bXN4Ymh0amVoc3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYzMjcxMDMsImV4cCI6MjA4MTkwMzEwM30.WjvJ9E52JXJzjnWAocxQsS9vSAZmrndUuAjUKW_pyCk'
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
