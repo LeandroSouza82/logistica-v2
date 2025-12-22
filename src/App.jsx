@@ -146,43 +146,86 @@ function App() {
       );
     }
 
-    // ROTA ATIVA (CONTEÚDO)
+    // --- TELA DE ROTA ATIVA (DENTRO DO IF MOTORISTA LOGADO) ---
     const pendentes = entregas.filter(e => e.status === 'Pendente');
+
     return (
       <div style={styles.mobileFull}>
         <header style={styles.headerMobile}>
-          <div>
+          <div style={{ textAlign: 'left' }}>
             <h2 style={{ margin: 0, fontSize: '18px' }}>ROTA ATIVA</h2>
-            <div style={styles.statusOnline}>● {motoristaLogado}</div>
+            <div style={styles.statusOnline}>
+              <span className="live-dot"></span> {motoristaLogado}
+            </div>
           </div>
           <button onClick={() => { localStorage.clear(); window.location.reload(); }} style={styles.btnSair}>SAIR</button>
         </header>
+
         <main style={styles.mainMobile}>
-          <Reorder.Group axis="y" values={pendentes} onReorder={finalizarReordem} style={styles.list}>
-            <AnimatePresence>
-              {pendentes.map((ent, index) => (
-                <Reorder.Item key={ent.id} value={ent} style={{ ...styles.card, background: index === 0 ? '#1e293b' : 'rgba(30,41,59,0.5)', borderLeft: index === 0 ? '6px solid #38bdf8' : '4px solid transparent' }}>
-                  <div style={styles.cardContent}>
-                    <div style={styles.dragHandle}>☰</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={styles.clienteNome}>{ent.cliente}</div>
-                      <div style={styles.enderecoText}>📍 {ent.endereco}</div>
+          {pendentes.length > 0 ? (
+            <Reorder.Group axis="y" values={pendentes} onReorder={finalizarReordem} style={styles.list}>
+              <AnimatePresence>
+                {pendentes.map((ent, index) => (
+                  <Reorder.Item
+                    key={ent.id}
+                    value={ent}
+                    style={{
+                      ...styles.card,
+                      background: index === 0 ? '#1e293b' : 'rgba(30,41,59,0.5)',
+                      borderLeft: index === 0 ? '6px solid #38bdf8' : '4px solid transparent'
+                    }}
+                  >
+                    <div style={styles.cardContent}>
+                      <div style={styles.dragHandle}>☰</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={styles.clienteNome}>{ent.cliente}</div>
+                        <div style={styles.enderecoText}>📍 {ent.endereco}</div>
+                      </div>
                     </div>
-                  </div>
-                  {index === 0 && (
-                    <div style={styles.actions}>
-                      <button onClick={() => window.open(`http://maps.google.com/?q=${encodeURIComponent(ent.endereco)}`)} style={styles.btnMapa}>GPS</button>
-                      <button onClick={async () => {
-                        const rec = prompt("Quem recebeu?");
-                        if (rec) await supabase.from('entregas').update({ status: 'Concluído', recado: `Recebido por: ${rec} | Mot: ${motoristaLogado}` }).eq('id', ent.id);
-                      }} style={styles.btnOk}>OK</button>
-                    </div>
-                  )}
-                </Reorder.Item>
-              ))}
-            </AnimatePresence>
-          </Reorder.Group>
+                    {index === 0 && (
+                      <div style={styles.actions}>
+                        <button onClick={() => window.open(`http://maps.google.com/?q=${encodeURIComponent(ent.endereco)}`)} style={styles.btnMapa}>GPS</button>
+                        <button onClick={() => concluirEntrega(ent.id)} style={styles.btnOk}>CONCLUIR</button>
+                      </div>
+                    )}
+                  </Reorder.Item>
+                ))}
+              </AnimatePresence>
+            </Reorder.Group>
+          ) : (
+            /* RADAR ANIMADO QUANDO NÃO HÁ ENTREGAS */
+            <div style={styles.radarContainer}>
+              <div className="radar-circle">
+                <div className="radar-ping"></div>
+              </div>
+              <h3 style={{ marginTop: '25px', color: '#38bdf8', fontWeight: '800' }}>BUSCANDO ROTAS</h3>
+              <p style={{ color: '#475569', fontSize: '14px' }}>Aguardando novos lançamentos...</p>
+            </div>
+          )}
         </main>
+
+        {/* CSS DAS ANIMAÇÕES */}
+        <style>{`
+          .live-dot {
+            width: 8px; height: 8px; background: #10b981; border-radius: 50%;
+            display: inline-block; margin-right: 5px; animation: blink 1.5s infinite;
+          }
+          @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+          .radar-circle {
+            width: 100px; height: 100px; border: 2px solid #38bdf8;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            position: relative;
+          }
+          .radar-ping {
+            width: 100%; height: 100%; background: #38bdf8; border-radius: 50%;
+            position: absolute; animation: radar-pulse 2s infinite ease-out; opacity: 0.5;
+          }
+          @keyframes radar-pulse {
+            0% { transform: scale(0.5); opacity: 0.8; }
+            100% { transform: scale(2.5); opacity: 0; }
+          }
+        `}</style>
       </div>
     );
   }
@@ -228,6 +271,14 @@ const styles = {
   enderecoText: { fontSize: '13px', color: '#94a3b8' },
   actions: { display: 'flex', gap: '10px', marginTop: '15px' },
   btnMapa: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #334155', background: 'none', color: '#fff' },
+  radarContainer: {
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center'
+  },
   btnSair: { color: '#ef4444', background: 'none', border: '1px solid #ef4444', padding: '5px 10px', borderRadius: '8px', fontSize: '10px' },
   dashBody: { display: 'flex', width: '100vw', height: '100vh', background: '#020617' },
   sidebar: { width: '300px', padding: '30px', background: '#0f172a', borderRight: '1px solid #1e293b' },
