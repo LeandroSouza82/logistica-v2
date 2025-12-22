@@ -33,46 +33,60 @@ function App() {
     }
   };
 
+  // FUNÇÃO PARA CADASTRAR MOTORISTA REAL
   const acaoCadastro = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('motoristas').insert([form]);
-    if (!error) {
-      alert("✅ Cadastro realizado com sucesso! Faça o login agora.");
-      setPaginaInterna('login');
+
+    // Preparar os dados (garantindo que não há espaços vazios)
+    const novoMotorista = {
+      nome: form.nome.trim(),
+      tel: form.tel.trim(),
+      senha: form.senha.trim(),
+      veiculo: form.veiculo.trim()
+    };
+
+    const { error } = await supabase
+      .from('motoristas')
+      .insert([novoMotorista]);
+
+    if (error) {
+      if (error.message && error.message.includes('unique')) {
+        alert("❌ Este número de WhatsApp já está cadastrado!");
+      } else {
+        alert("❌ Erro ao cadastrar: " + error.message);
+      }
     } else {
-      alert("❌ Erro ao cadastrar: " + error.message);
+      alert("✅ Cadastro realizado com sucesso! Agora faz o login.");
+      setPaginaInterna('login'); // Volta para a tela de login
     }
   };
 
-  // LOGIN COM PERSISTÊNCIA (NORMALIZAÇÃO E MENSAGENS CLARAS)
+  // FUNÇÃO DE LOGIN (NORMALIZAÇÃO E maybeSingle)
   const acaoLogin = async (e) => {
     e.preventDefault();
 
-    // Pegamos os dados e limpamos espaços extras
     const whats = form.tel.trim();
     const pass = form.senha.trim();
 
-    // Fazemos a busca no banco
     const { data, error } = await supabase
       .from('motoristas')
       .select('*')
       .eq('tel', whats)
-      .eq('senha', pass);
+      .eq('senha', pass)
+      .maybeSingle(); // Busca apenas um resultado
 
     if (error) {
-      alert("Erro no banco: " + error.message);
+      alert("Erro técnico: " + error.message);
       return;
     }
 
-    // Se encontrou pelo menos um registro
-    if (data && data.length > 0) {
-      const usuario = data[0];
-      localStorage.setItem('mot_v10_nome', usuario.nome);
-      localStorage.setItem('mot_v10_tel', usuario.tel);
-      setMotoristaLogado(usuario.nome);
-      alert("✅ Login realizado com sucesso!");
+    if (data) {
+      // "LEMBRAR SENHA" - Salva no navegador
+      localStorage.setItem('mot_v10_nome', data.nome);
+      localStorage.setItem('mot_v10_tel', data.tel);
+      setMotoristaLogado(data.nome);
     } else {
-      alert("❌ Dados Incorretos!\n\nVerifique se o WhatsApp e a Senha estão certos no banco.");
+      alert("❌ Dados Incorretos! Verifica o teu WhatsApp e Senha.");
     }
   };
 
