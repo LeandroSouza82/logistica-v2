@@ -7,77 +7,82 @@ function App() {
   const [entregas, setEntregas] = useState([]);
   const [view, setView] = useState(window.innerWidth < 768 ? 'motorista' : 'gestor');
 
-  const formatarDataBR = (isoString) => {
-    if (!isoString) return '';
-    return new Date(isoString).toLocaleString('pt-BR');
-  };
-
   const buscarDados = async () => {
-    const { data } = await supabase.from('entregas').select('*').order('ordem', { ascending: true });
+    const { data } = await supabase.from('entregas')
+      .select('*')
+      .order('ordem', { ascending: true });
     if (data) setEntregas(data);
   };
 
   useEffect(() => {
     buscarDados();
-    const canal = supabase.channel('mobile_sync').on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => buscarDados()).subscribe();
+    // REALTIME REFORÇADO: Escuta qualquer mudança e atualiza a tela na hora
+    const canal = supabase.channel('fluxo_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => {
+        buscarDados();
+        somNovaEntrega.play().catch(() => {});
+      })
+      .subscribe();
     return () => supabase.removeChannel(canal);
   }, []);
 
   const concluirEntrega = async (id) => {
-    const nomeRecebedor = prompt("Quem recebeu a mercadoria?");
-    if (!nomeRecebedor) return; // Cancela se não digitar nada
-
-    const agora = new Date().toISOString(); 
+    const nomeRecebedor = prompt("Quem recebeu?");
+    if (!nomeRecebedor) return;
     await supabase.from('entregas').update({ 
       status: 'Concluído', 
-      horario_conclusao: agora,
-      recado: `Recebido por: ${nomeRecebedor}` // Salva quem recebeu no campo de recado
+      horario_conclusao: new Date().toISOString(),
+      recado: `Entregue para: ${nomeRecebedor}`
     }).eq('id', id);
   };
 
+  const mudarOrdem = async (id, novaOrdem) => {
+    await supabase.from('entregas').update({ ordem: novaOrdem }).eq('id', id);
+    // O Realtime atualizará a lista para todos automaticamente
+  };
+
   if (view === 'motorista') {
-    const concluidas = entregas.filter(e => e.status === 'Concluído').length;
-    const progresso = entregas.length > 0 ? (concluidas / entregas.length) * 100 : 0;
+    const fila = entregas.filter(e => e.status === 'Pendente');
+    const atual = fila[0];
+    const proximas = fila.slice(1);
 
     return (
       <div style={styles.mobileContainer}>
-        <header style={styles.mobileHeader}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-             <span style={{fontSize:'10px', color:'#38bdf8'}}>LOGÍSTICA V2</span>
-             <button onClick={() => setView('gestor')} style={styles.btnModo}>GESTOR</button>
-          </div>
-          <h2 style={{margin:'10px 0 5px 0'}}>Minha Rota</h2>
-          <div style={styles.progressBg}><div style={{...styles.progressFill, width: `${progresso}%`}}></div></div>
+        <header style={styles.header}>
+          <h2 style={{margin:0}}>ENTREGA ATUAL</h2>
+          <small>{fila.length} paradas restantes</small>
         </header>
 
         <div style={styles.scrollArea}>
-          {entregas.map((ent, index) => (
-            <div key={ent.id} style={{...styles.cardMobile, borderColor: ent.status === 'Concluído' ? '#00ff88' : '#38bdf8'}}>
-              <div style={{display:'flex', justifyContent:'space-between'}}>
-                <span style={styles.badge}>{index + 1}ª PARADA</span>
-                <span style={{color: ent.status === 'Concluído' ? '#00ff88' : '#fbbf24', fontSize:'12px'}}>● {ent.status}</span>
-              </div>
+          {/* 1º CARD: O PRINCIPAL E MAIOR */}
+          {atual ? (
+            <div style={styles.cardPrincipal}>
+              <div style={styles.badgeAtiva}>AGORA</div>
+              <h1 style={{margin: '10px 0'}}>{atual.cliente}</h1>
+              <p style={{fontSize: '18px', marginBottom: '20px'}}>📍 {atual.endereco}</p>
               
-              <h3 style={{margin:'10px 0'}}>{ent.cliente}</h3>
-              <p style={{fontSize:'14px', color:'#94a3b8'}}>📍 {ent.endereco}</p>
+              <div style={styles.gridAcoes}>
+                <button onClick={() => window.open(`http://maps.google.com/?q=${encodeURIComponent(atual.endereco)}`)} style={styles.btnMapa}>🗺️ ABRIR MAPA</button>
+                <button onClick={() => concluirEntrega(atual.id)} style={styles.btnConcluir}>✅ CONCLUIR</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{textAlign:'center', padding:'40px'}}>🏆 Rota Finalizada!</div>
+          )}
 
-              {ent.status !== 'Concluído' ? (
-                <div style={styles.gridBotoes}>
-                  {/* BOTÃO MAPA */}
-                  <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ent.endereco)}`, '_blank')} style={styles.btnAcao}>🗺️ MAPA</button>
-                  
-                  {/* BOTÃO WHATSAPP (Usa o telefone do motorista cadastrado ou você pode adicionar campo telefone_cliente) */}
-                  <button onClick={() => window.open(`https://wa.me/55${ent.telefone?.replace(/\D/g,'')}`, '_blank')} style={{...styles.btnAcao, backgroundColor:'#25D366', color:'#fff'}}>💬 WHATS</button>
-                  
-                  {/* BOTÃO CONCLUIR */}
-                  <button onClick={() => concluirEntrega(ent.id)} style={{...styles.btnAcao, backgroundColor:'#00ff88', color:'#000', gridColumn:'span 2'}}>✅ CONCLUIR</button>
-                </div>
-              ) : (
-                <div style={styles.txtConcluido}>
-                  {ent.recado} <br/>
-                  <small>{formatarDataBR(ent.horario_conclusao)}</small>
-                </div>
-              )}
+          {/* PRÓXIMAS ENTREGAS: CARDS MENORES */}
+          <h3 style={{marginTop: '20px', color: '#94a3b8'}}>PRÓXIMAS PARADAS</h3>
+          {proximas.map((ent, i) => (
+            <div key={ent.id} style={styles.cardMenor}>
+              <div style={{flex: 1}}>
+                <div style={{fontSize: '11px', color: '#38bdf8'}}>{i + 2}º PARADA</div>
+                <div style={{fontWeight: 'bold'}}>{ent.cliente}</div>
+                <div style={{fontSize: '12px', color: '#94a3b8'}}>{ent.endereco}</div>
+              </div>
+              <div style={styles.controleOrdem}>
+                <button onClick={() => mudarOrdem(ent.id, ent.ordem - 1.5)}>▲</button>
+                <button onClick={() => mudarOrdem(ent.id, ent.ordem + 1.5)}>▼</button>
+              </div>
             </div>
           ))}
         </div>
@@ -85,25 +90,21 @@ function App() {
     );
   }
 
-  return <div style={{padding:'50px', color:'#fff', textAlign:'center'}}>
-    <h2>PAINEL GESTOR</h2>
-    <p>Use o celular para a operação de rua.</p>
-    <button onClick={() => setView('motorista')} style={{padding:'10px 20px'}}>Voltar para Motorista</button>
-  </div>;
+  return <div style={{padding:'20px', color:'#fff'}}>Dashboard Gestor Ativo. Envie as rotas para ver no celular. <button onClick={() => setView('motorista')}>Ver Celular</button></div>;
 }
 
 const styles = {
   mobileContainer: { width: '100vw', height: '100vh', backgroundColor: '#0f172a', color: '#fff', display: 'flex', flexDirection: 'column' },
-  mobileHeader: { padding: '15px', backgroundColor: '#1e293b', borderBottom: '1px solid #334155' },
-  progressBg: { width: '100%', height: '6px', backgroundColor: '#334155', borderRadius: '3px', overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#00ff88', transition: 'width 0.5s' },
+  header: { padding: '20px', backgroundColor: '#1e293b', borderBottom: '2px solid #38bdf8', textAlign: 'center' },
   scrollArea: { flex: 1, overflowY: 'auto', padding: '15px' },
-  cardMobile: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '15px', marginBottom: '15px', borderLeft: '5px solid' },
-  badge: { background: '#334155', padding: '2px 8px', borderRadius: '4px', fontSize: '10px' },
-  gridBotoes: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '15px' },
-  btnAcao: { padding: '12px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', backgroundColor: '#334155', color: '#fff' },
-  txtConcluido: { textAlign: 'center', color: '#00ff88', fontSize: '12px', fontWeight: 'bold', marginTop: '10px' },
-  btnModo: { padding: '4px 8px', fontSize: '10px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '4px' }
+  cardPrincipal: { backgroundColor: '#1e293b', padding: '25px', borderRadius: '20px', borderLeft: '8px solid #38bdf8', boxShadow: '0 10px 15px rgba(0,0,0,0.3)' },
+  badgeAtiva: { backgroundColor: '#38bdf8', color: '#000', display: 'inline-block', padding: '2px 10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px' },
+  gridAcoes: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  btnMapa: { padding: '18px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '16px' },
+  btnConcluir: { padding: '18px', backgroundColor: '#00ff88', color: '#000', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '18px' },
+  cardMenor: { backgroundColor: '#1e293b', padding: '12px', borderRadius: '12px', marginTop: '10px', display: 'flex', alignItems: 'center', opacity: 0.8 },
+  controleOrdem: { display: 'flex', flexDirection: 'column', gap: '5px', marginLeft: '10px' },
+  btnVitoria: { marginTop: '20px', padding: '15px', backgroundColor: '#ffd700', borderRadius: '10px' }
 };
 
 export default App;
