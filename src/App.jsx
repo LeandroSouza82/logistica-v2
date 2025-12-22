@@ -8,6 +8,10 @@ function App() {
   const [entregas, setEntregas] = useState([]);
   const [view, setView] = useState(window.innerWidth < 768 ? 'motorista' : 'gestor');
 
+  // LOGIN: Tenta recuperar o motorista salvo no aparelho
+  const [motoristaLogado, setMotoristaLogado] = useState(localStorage.getItem('motorista_nome') || null);
+  const [dadosRegistro, setDadosRegistro] = useState({ nome: '', telefone: '', veiculo: '' });
+
   const buscarDados = async () => {
     const { data } = await supabase.from('entregas').select('*').order('ordem', { ascending: true });
     if (data) setEntregas(data);
@@ -20,6 +24,20 @@ function App() {
       .subscribe();
     return () => supabase.removeChannel(canal);
   }, []);
+
+  const fazerCadastro = async (e) => {
+    e.preventDefault();
+    // Salva no Banco de Dados
+    const { error } = await supabase.from('motoristas').insert([dadosRegistro]);
+
+    if (!error) {
+      // Salva no Celular (Lembrar Login)
+      localStorage.setItem('motorista_nome', dadosRegistro.nome);
+      setMotoristaLogado(dadosRegistro.nome);
+    } else {
+      alert("Erro ao cadastrar: " + error.message);
+    }
+  };
 
   const finalizarReordem = async (novaLista) => {
     setEntregas(novaLista);
@@ -35,10 +53,10 @@ function App() {
     if (!nomeRecebedor) return;
 
     const { error } = await supabase.from('entregas')
-      .update({ 
-        status: 'Concluído', 
+      .update({
+        status: 'Concluído',
         horario_conclusao: new Date().toISOString(),
-        recado: `Recebido por: ${nomeRecebedor}` 
+        recado: `Recebido por: ${nomeRecebedor}`
       })
       .eq('id', id);
 
@@ -49,13 +67,48 @@ function App() {
     }
   };
 
-  if (view === 'motorista') {
+  if (view === 'motorista' && !motoristaLogado) {
+    // TELA DE CADASTRO (MOTORISTA)
+    return (
+      <div style={styles.appContainer}>
+        <div style={styles.loginCard}>
+          <div style={styles.iconCircle}>🚛</div>
+          <h1 style={{ fontSize: '24px', fontWeight: '800', marginBottom: '10px' }}>Primeiro Acesso</h1>
+          <p style={{ color: '#94a3b8', marginBottom: '30px' }}>Identifique-se para visualizar suas rotas de hoje.</p>
+
+          <form onSubmit={fazerCadastro} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <input
+              placeholder="Seu Nome Completo"
+              style={styles.inputLogin}
+              onChange={e => setDadosRegistro({ ...dadosRegistro, nome: e.target.value })}
+              required
+            />
+            <input
+              placeholder="WhatsApp com DDD"
+              style={styles.inputLogin}
+              onChange={e => setDadosRegistro({ ...dadosRegistro, telefone: e.target.value })}
+              required
+            />
+            <input
+              placeholder="Veículo (Ex: Fiorino, Moto)"
+              style={styles.inputLogin}
+              onChange={e => setDadosRegistro({ ...dadosRegistro, veiculo: e.target.value })}
+              required
+            />
+            <button type="submit" style={styles.btnAcessar}>ATIVAR MEU TURNO</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'motorista' && motoristaLogado) {
     const pendentes = entregas.filter(e => e.status === 'Pendente');
 
     return (
       <div style={styles.appContainer}>
         <header style={styles.header}>
-          <h2 style={{margin: 0, fontSize: '18px', fontWeight: '800'}}>ROTA ATIVA</h2>
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>ROTA ATIVA</h2>
           <div style={styles.statusOnline}>● REALTIME</div>
         </header>
 
@@ -71,14 +124,14 @@ function App() {
                   exit={{ opacity: 0, x: -100 }}
                   whileDrag={{ scale: 1.03, boxShadow: "0px 15px 30px rgba(0,0,0,0.5)" }}
                   style={{
-                    ...styles.card, 
+                    ...styles.card,
                     borderLeft: index === 0 ? '6px solid #38bdf8' : '4px solid transparent',
                     background: index === 0 ? '#1e293b' : 'rgba(30, 41, 59, 0.5)'
                   }}
                 >
                   <div style={styles.cardContent}>
                     <div style={styles.dragHandle}>☰</div>
-                    <div style={{flex: 1}}>
+                    <div style={{ flex: 1 }}>
                       <div style={styles.clienteNome}>{ent.cliente}</div>
                       <div style={styles.enderecoText}>📍 {ent.endereco}</div>
                     </div>
@@ -87,14 +140,14 @@ function App() {
                   {/* SÓ MOSTRA OS BOTÕES NA ENTREGA ATUAL (A PRIMEIRA DA LISTA) */}
                   {index === 0 && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={styles.actions}>
-                      <button 
-                        onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ent.endereco)}`)} 
+                      <button
+                        onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ent.endereco)}`)}
                         style={styles.btnMapa}
                       >
                         ABRIR GPS
                       </button>
-                      <button 
-                        onClick={() => concluirEntrega(ent.id)} 
+                      <button
+                        onClick={() => concluirEntrega(ent.id)}
                         style={styles.btnOk}
                       >
                         CONCLUIR
@@ -105,12 +158,12 @@ function App() {
               ))}
             </AnimatePresence>
           </Reorder.Group>
-          
+
           {pendentes.length === 0 && (
             <div style={styles.empty}>
-               <div style={{fontSize: '40px'}}>🏁</div>
-               <h3>Fim da jornada!</h3>
-               <p>Não há mais entregas pendentes.</p>
+              <div style={{ fontSize: '40px' }}>🏁</div>
+              <h3>Fim da jornada!</h3>
+              <p>Não há mais entregas pendentes.</p>
             </div>
           )}
         </main>
@@ -128,7 +181,7 @@ function App() {
       {/* SIDEBAR DE COMANDO */}
       <aside style={styles.sidebar}>
         <div style={styles.logoArea}>
-          <h2 style={styles.logo}>LOGÍSTICA <span style={{color:'#38bdf8'}}>PRO</span></h2>
+          <h2 style={styles.logo}>LOGÍSTICA <span style={{ color: '#38bdf8' }}>PRO</span></h2>
           <p style={styles.subLogo}>Painel Administrativo</p>
         </div>
 
@@ -163,11 +216,11 @@ function App() {
           </div>
           <div style={styles.statCard}>
             <span style={styles.statLabel}>CONCLUÍDAS</span>
-            <div style={{...styles.statValue, color: '#10b981'}}>{concluidas.length}</div>
+            <div style={{ ...styles.statValue, color: '#10b981' }}>{concluidas.length}</div>
           </div>
           <div style={styles.statCard}>
             <span style={styles.statLabel}>PENDENTES</span>
-            <div style={{...styles.statValue, color: '#fbbf24'}}>{pendentes.length}</div>
+            <div style={{ ...styles.statValue, color: '#fbbf24' }}>{pendentes.length}</div>
           </div>
           <div style={styles.statCard}>
             <span style={styles.statLabel}>EFICIÊNCIA</span>
@@ -181,7 +234,7 @@ function App() {
             <h3>Monitoramento em Tempo Real</h3>
             <div style={styles.liveDot}>● LIVE</div>
           </div>
-          
+
           <table style={styles.table}>
             <thead>
               <tr>
@@ -197,11 +250,11 @@ function App() {
               {entregas.map((ent) => (
                 <tr key={ent.id} style={styles.tr}>
                   <td style={styles.td}>#{ent.ordem}</td>
-                  <td style={{...styles.td, fontWeight: 'bold'}}>{ent.cliente}</td>
+                  <td style={{ ...styles.td, fontWeight: 'bold' }}>{ent.cliente}</td>
                   <td style={styles.td}>{ent.endereco}</td>
                   <td style={styles.td}>
                     <span style={{
-                      ...styles.statusTag, 
+                      ...styles.statusTag,
                       backgroundColor: ent.status === 'Concluído' ? '#064e3b' : '#451a03',
                       color: ent.status === 'Concluído' ? '#10b981' : '#fbbf24'
                     }}>
@@ -223,6 +276,48 @@ function App() {
 const styles = {
   appContainer: { width: '100vw', height: '100vh', backgroundColor: '#020617', color: '#fff', fontFamily: '-apple-system, sans-serif' },
   header: { padding: '20px', backgroundColor: '#0f172a', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  loginCard: {
+    padding: '40px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    height: '100vh',
+    justifyContent: 'center'
+  },
+  iconCircle: {
+    width: '80px',
+    height: '80px',
+    backgroundColor: '#1e293b',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '40px',
+    marginBottom: '20px',
+    border: '2px solid #38bdf8'
+  },
+  inputLogin: {
+    width: '100%',
+    padding: '18px',
+    borderRadius: '15px',
+    border: '1px solid #334155',
+    backgroundColor: '#0f172a',
+    color: '#fff',
+    fontSize: '16px',
+    boxSizing: 'border-box'
+  },
+  btnAcessar: {
+    padding: '20px',
+    borderRadius: '15px',
+    border: 'none',
+    backgroundColor: '#38bdf8',
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: '16px',
+    marginTop: '10px',
+    cursor: 'pointer'
+  },
   statusOnline: { fontSize: '10px', color: '#10b981', fontWeight: 'bold' },
   main: { padding: '15px', height: 'calc(100vh - 80px)', overflowY: 'auto' },
   list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '15px' },
