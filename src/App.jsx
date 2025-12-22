@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { motion, Reorder, AnimatePresence } from 'framer-motion';
 
 const somAlerta = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
 function App() {
   const [entregas, setEntregas] = useState([]);
   const [view, setView] = useState(window.innerWidth < 768 ? 'motorista' : 'gestor');
-  const [draggedIndex, setDraggedIndex] = useState(null);
 
   const buscarDados = async () => {
     const { data } = await supabase.from('entregas').select('*').order('ordem', { ascending: true });
@@ -15,106 +15,91 @@ function App() {
 
   useEffect(() => {
     buscarDados();
-    const canal = supabase.channel('drag_drop_realtime')
+    const canal = supabase.channel('logistica_fluida')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => buscarDados())
       .subscribe();
     return () => supabase.removeChannel(canal);
   }, []);
 
-  // Lógica de Arrastar (Drag)
-  const onDragStart = (index) => setDraggedIndex(index);
-
-  const onDragOver = (index) => {
-    if (draggedIndex === null || draggedIndex === index) return;
-    const novasEntregas = [...entregas];
-    const itemArrastado = novasEntregas[draggedIndex];
-    novasEntregas.splice(draggedIndex, 1);
-    novasEntregas.splice(index, 0, itemArrastado);
-    setDraggedIndex(index);
-    setEntregas(novasEntregas);
-  };
-
-  const onDragEnd = async () => {
-    setDraggedIndex(null);
-    // Atualiza as ordens no Banco de Dados após soltar
-    for (let i = 0; i < entregas.length; i++) {
-      await supabase.from('entregas').update({ ordem: i + 1 }).eq('id', entregas[i].id);
+  // Atualiza o banco de dados quando a reordenação termina
+  const finalizarReordem = async (novaLista) => {
+    setEntregas(novaLista);
+    for (let i = 0; i < novaLista.length; i++) {
+      await supabase.from('entregas').update({ ordem: i + 1 }).eq('id', novaLista[i].id);
     }
   };
 
   if (view === 'motorista') {
+    const pendentes = entregas.filter(e => e.status === 'Pendente');
+
     return (
       <div style={styles.appContainer}>
         <header style={styles.header}>
-          <h2 style={{margin: 0, fontSize: '18px'}}>MINHA ROTA</h2>
-          <small style={{color: '#38bdf8'}}>Segure e arraste para reordenar</small>
+          <h2 style={{margin: 0, fontSize: '18px', fontWeight: '800'}}>ROTA INTELIGENTE</h2>
+          <div style={styles.statusOnline}>● Sincronizado</div>
         </header>
 
         <main style={styles.main}>
-          <div style={styles.list}>
-            {entregas.filter(e => e.status === 'Pendente').map((ent, index) => (
-              <div
-                key={ent.id}
-                draggable
-                onDragStart={() => onDragStart(index)}
-                onDragOver={(e) => { e.preventDefault(); onDragOver(index); }}
-                onDragEnd={onDragEnd}
-                // Suporte para Toque no Celular
-                onTouchStart={() => onDragStart(index)}
-                onTouchMove={(e) => {
-                  const touch = e.touches[0];
-                  const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                  const targetIndex = entregas.findIndex(item => item.id.toString() === el?.id);
-                  if (targetIndex !== -1) onDragOver(targetIndex);
-                }}
-                onTouchEnd={onDragEnd}
-                id={ent.id.toString()}
-                style={{
-                  ...styles.card,
-                  opacity: draggedIndex === index ? 0.5 : 1,
-                  transform: draggedIndex === index ? 'scale(1.05)' : 'scale(1)',
-                  borderLeft: index === 0 ? '6px solid #38bdf8' : '4px solid #334155',
-                  backgroundColor: index === 0 ? '#1e293b' : 'rgba(30, 41, 59, 0.5)'
-                }}
-              >
-                <div style={styles.cardContent}>
-                  <div style={styles.orderBadge}>{index + 1}º</div>
-                  <div style={{flex: 1}}>
-                    <div style={{fontWeight: 'bold', fontSize: '16px'}}>{ent.cliente}</div>
-                    <div style={{fontSize: '12px', color: '#94a3b8'}}>{ent.endereco}</div>
+          {/* O Reorder.Group é o segredo da fluidez total */}
+          <Reorder.Group axis="y" values={pendentes} onReorder={finalizarReordem} style={styles.list}>
+            <AnimatePresence>
+              {pendentes.map((ent, index) => (
+                <Reorder.Item
+                  key={ent.id}
+                  value={ent}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  whileDrag={{ scale: 1.05, boxShadow: "0px 10px 20px rgba(0,0,0,0.4)" }}
+                  style={{...styles.card, borderLeft: index === 0 ? '6px solid #38bdf8' : '4px solid transparent'}}
+                >
+                  <div style={styles.cardContent}>
+                    <div style={styles.dragHandle}>☰</div>
+                    <div style={{flex: 1}}>
+                      <div style={styles.clienteNome}>{ent.cliente}</div>
+                      <div style={styles.enderecoText}>📍 {ent.endereco}</div>
+                    </div>
+                    {index === 0 && <div style={styles.nowBadge}>AGORA</div>}
                   </div>
-                  <div style={styles.dragIcon}>☰</div>
-                </div>
-                
-                {index === 0 && (
-                  <div style={styles.actions}>
-                    <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ent.endereco)}`)} style={styles.btnMapa}>MAPA</button>
-                    <button onClick={() => {/* função concluir */}} style={styles.btnOk}>OK</button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+
+                  {index === 0 && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={styles.actions}>
+                      <button onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ent.endereco)}`)} style={styles.btnMapa}>GPS</button>
+                      <button onClick={() => {/* função concluir */}} style={styles.btnOk}>CONCLUIR</button>
+                    </motion.div>
+                  )}
+                </Reorder.Item>
+              ))}
+            </AnimatePresence>
+          </Reorder.Group>
+          
+          {pendentes.length === 0 && (
+            <div style={styles.empty}>Tudo pronto! Nenhuma entrega pendente.</div>
+          )}
         </main>
       </div>
     );
   }
 
-  return <div>Painel Gestor</div>;
+  return <div style={{color:'#fff', padding:'50px'}}>Painel Gestor</div>;
 }
 
 const styles = {
-  appContainer: { width: '100vw', height: '100vh', backgroundColor: '#0f172a', color: '#fff', fontFamily: 'sans-serif' },
-  header: { padding: '20px', backgroundColor: '#1e293b', textAlign: 'center', borderBottom: '1px solid #334155' },
-  main: { padding: '15px', height: 'calc(100vh - 80px)', overflowY: 'auto' },
-  list: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  card: { padding: '15px', borderRadius: '15px', transition: 'all 0.2s', cursor: 'grab', userSelect: 'none', touchAction: 'none' },
+  appContainer: { width: '100vw', height: '100vh', backgroundColor: '#020617', color: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' },
+  header: { padding: '25px 20px', backgroundColor: '#0f172a', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  statusOnline: { fontSize: '10px', color: '#10b981', fontWeight: 'bold', textTransform: 'uppercase' },
+  main: { padding: '15px', height: 'calc(100vh - 90px)', overflowY: 'auto' },
+  list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '12px' },
+  card: { backgroundColor: '#1e293b', padding: '20px', borderRadius: '20px', cursor: 'grab', listStyle: 'none', userSelect: 'none' },
   cardContent: { display: 'flex', alignItems: 'center', gap: '15px' },
-  orderBadge: { background: '#38bdf8', color: '#000', padding: '2px 8px', borderRadius: '5px', fontWeight: 'bold', fontSize: '12px' },
-  dragIcon: { color: '#475569', fontSize: '20px' },
-  actions: { display: 'flex', gap: '10px', marginTop: '15px' },
-  btnMapa: { flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#334155', color: '#fff' },
-  btnOk: { flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#00ff88', color: '#000', fontWeight: 'bold' }
+  dragHandle: { color: '#475569', fontSize: '20px' },
+  clienteNome: { fontWeight: '700', fontSize: '18px', marginBottom: '4px' },
+  enderecoText: { fontSize: '13px', color: '#94a3b8', lineHeight: '1.4' },
+  nowBadge: { background: '#38bdf8', color: '#000', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '900' },
+  actions: { display: 'flex', gap: '10px', marginTop: '20px' },
+  btnMapa: { flex: 1, padding: '15px', borderRadius: '12px', border: '1px solid #334155', background: 'transparent', color: '#fff', fontWeight: 'bold' },
+  btnOk: { flex: 1, padding: '15px', borderRadius: '12px', border: 'none', background: '#38bdf8', color: '#000', fontWeight: 'bold' },
+  empty: { textAlign: 'center', marginTop: '100px', color: '#475569' }
 };
 
 export default App;
