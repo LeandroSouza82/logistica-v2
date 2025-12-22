@@ -7,6 +7,10 @@ const somAlerta = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/28
 function App() {
   const [entregas, setEntregas] = useState([]);
   const [view, setView] = useState(window.innerWidth < 768 ? 'motorista' : 'gestor');
+  
+  // LOGIN: Controle de acesso
+  const [motoristaLogado, setMotoristaLogado] = useState(localStorage.getItem('mot_v5') || null);
+  const [formRegistro, setFormRegistro] = useState({ nome: '', tel: '' });
 
   const buscarDados = async () => {
     const { data } = await supabase.from('entregas').select('*').order('ordem', { ascending: true });
@@ -15,7 +19,7 @@ function App() {
 
   useEffect(() => {
     buscarDados();
-    const canal = supabase.channel('logistica_final')
+    const canal = supabase.channel('logistica_vfinal')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => buscarDados())
       .subscribe();
     return () => supabase.removeChannel(canal);
@@ -23,40 +27,58 @@ function App() {
 
   const finalizarReordem = async (novaLista) => {
     setEntregas(novaLista);
-    // Atualiza a ordem no banco para persistir o que o motorista fez
     for (let i = 0; i < novaLista.length; i++) {
       await supabase.from('entregas').update({ ordem: i + 1 }).eq('id', novaLista[i].id);
     }
   };
 
-  // FUNÇÃO DE CONCLUIR REATIVADA
   const concluirEntrega = async (id) => {
     const nomeRecebedor = prompt("Quem recebeu a mercadoria?");
     if (!nomeRecebedor) return;
-
     const { error } = await supabase.from('entregas')
       .update({ 
         status: 'Concluído', 
         horario_conclusao: new Date().toISOString(),
-        recado: `Recebido por: ${nomeRecebedor}` 
+        recado: `Recebido por: ${nomeRecebedor} | Mot: ${motoristaLogado}` 
       })
       .eq('id', id);
-
-    if (error) {
-      alert("Erro ao concluir: " + error.message);
-    } else {
-      buscarDados(); // Atualiza a lista e remove o card concluído da tela
-    }
+    if (!error) buscarDados();
   };
 
+  const salvarMotorista = (e) => {
+    e.preventDefault();
+    localStorage.setItem('mot_v5', formRegistro.nome);
+    setMotoristaLogado(formRegistro.nome);
+  };
+
+  // --- VISÃO MOTORISTA ---
   if (view === 'motorista') {
+    if (!motoristaLogado) {
+      return (
+        <div style={{...styles.appContainer, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px'}}>
+          <div style={{width:'100%', textAlign:'center'}}>
+            <div style={{fontSize:'60px', marginBottom:'20px'}}>🚚</div>
+            <h2 style={{marginBottom:'20px'}}>Acesso Motorista</h2>
+            <form onSubmit={salvarMotorista} style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+              <input placeholder="Seu Nome" style={styles.inputLogin} onChange={e => setFormRegistro({...formRegistro, nome: e.target.value})} required />
+              <input placeholder="WhatsApp" style={styles.inputLogin} onChange={e => setFormRegistro({...formRegistro, tel: e.target.value})} required />
+              <button type="submit" style={styles.btnOk}>ATIVAR TURNO</button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
     const pendentes = entregas.filter(e => e.status === 'Pendente');
 
     return (
       <div style={styles.appContainer}>
         <header style={styles.header}>
-          <h2 style={{margin: 0, fontSize: '18px', fontWeight: '800'}}>ROTA ATIVA</h2>
-          <div style={styles.statusOnline}>● REALTIME</div>
+          <div style={{textAlign:'left'}}>
+            <h2 style={{margin: 0, fontSize: '18px', fontWeight: '800'}}>ROTA ATIVA</h2>
+            <div style={styles.statusOnline}>● {motoristaLogado}</div>
+          </div>
+          <button onClick={() => { localStorage.clear(); window.location.reload(); }} style={styles.btnSair}>SAIR</button>
         </header>
 
         <main style={styles.main}>
@@ -84,33 +106,20 @@ function App() {
                     </div>
                   </div>
 
-                  {/* SÓ MOSTRA OS BOTÕES NA ENTREGA ATUAL (A PRIMEIRA DA LISTA) */}
                   {index === 0 && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={styles.actions}>
-                      <button 
-                        onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ent.endereco)}`)} 
-                        style={styles.btnMapa}
-                      >
-                        ABRIR GPS
-                      </button>
-                      <button 
-                        onClick={() => concluirEntrega(ent.id)} 
-                        style={styles.btnOk}
-                      >
-                        CONCLUIR
-                      </button>
+                      <button onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=$${encodeURIComponent(ent.endereco)}`)} style={styles.btnMapa}>GPS</button>
+                      <button onClick={() => concluirEntrega(ent.id)} style={styles.btnOk}>CONCLUIR</button>
                     </motion.div>
                   )}
                 </Reorder.Item>
               ))}
             </AnimatePresence>
           </Reorder.Group>
-          
           {pendentes.length === 0 && (
             <div style={styles.empty}>
                <div style={{fontSize: '40px'}}>🏁</div>
                <h3>Fim da jornada!</h3>
-               <p>Não há mais entregas pendentes.</p>
             </div>
           )}
         </main>
@@ -118,9 +127,45 @@ function App() {
     );
   }
 
-  return <div style={{background:'#020617', height:'100vh', display:'flex', alignItems:'center', justifyContent:'center'}}>
-    <button onClick={() => setView('motorista')} style={styles.btnOk}>Simular Celular</button>
-  </div>;
+  // --- VISÃO GESTOR ---
+  return (
+    <div style={styles.dashContainer}>
+      <aside style={styles.sidebar}>
+        <h2 style={{color:'#38bdf8', marginBottom:'30px'}}>DASHBOARD</h2>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          await supabase.from('entregas').insert([{
+            cliente: e.target.c.value, endereco: e.target.e.value, status:'Pendente', ordem: entregas.length + 1
+          }]);
+          e.target.reset();
+        }}>
+          <input name="c" placeholder="Cliente" style={styles.inputLogin} required />
+          <input name="e" placeholder="Endereço" style={styles.inputLogin} required />
+          <button type="submit" style={{...styles.btnOk, width:'100%'}}>LANÇAR NA ROTA</button>
+        </form>
+        <button onClick={() => setView('motorista')} style={{marginTop:'20px', background:'none', color:'#475569', border:'none', cursor:'pointer'}}>Ver Modo Celular</button>
+      </aside>
+
+      <main style={{flex:1, padding:'40px', overflowY:'auto'}}>
+        <h3>Entregas em Tempo Real</h3>
+        <table style={{width:'100%', borderCollapse:'collapse', marginTop:'20px'}}>
+          <thead style={{textAlign:'left', color:'#475569'}}>
+            <tr><th style={{padding:'15px'}}>ORDEM</th><th>CLIENTE</th><th>STATUS</th><th>RECADO</th></tr>
+          </thead>
+          <tbody>
+            {entregas.map(ent => (
+              <tr key={ent.id} style={{borderBottom:'1px solid #1e293b'}}>
+                <td style={{padding:'15px'}}>#{ent.ordem}</td>
+                <td>{ent.cliente}</td>
+                <td><span style={{color: ent.status==='Concluído'?'#10b981':'#fbbf24'}}>{ent.status}</span></td>
+                <td style={{fontSize:'12px', color:'#94a3b8'}}>{ent.recado}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </main>
+    </div>
+  );
 }
 
 const styles = {
@@ -137,7 +182,11 @@ const styles = {
   actions: { display: 'flex', gap: '10px', marginTop: '20px' },
   btnMapa: { flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #334155', background: 'transparent', color: '#fff', fontWeight: 'bold' },
   btnOk: { flex: 1, padding: '16px', borderRadius: '14px', border: 'none', background: '#38bdf8', color: '#000', fontWeight: 'bold' },
-  empty: { textAlign: 'center', marginTop: '100px', color: '#475569' }
+  btnSair: { background:'none', border:'1px solid #ef4444', color:'#ef4444', padding:'5px 10px', borderRadius:'8px', fontSize:'10px' },
+  inputLogin: { width:'100%', padding:'15px', marginBottom:'10px', borderRadius:'10px', border:'1px solid #334155', backgroundColor:'#0f172a', color:'#fff', boxSizing:'border-box' },
+  empty: { textAlign: 'center', marginTop: '100px', color: '#475569' },
+  dashContainer: { display:'flex', width:'100vw', height:'100vh', backgroundColor:'#020617', color:'#fff' },
+  sidebar: { width:'300px', padding:'30px', backgroundColor:'#0f172a', borderRight:'1px solid #1e293b' }
 };
 
 export default App;
