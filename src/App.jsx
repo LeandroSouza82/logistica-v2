@@ -142,7 +142,7 @@ function App() {
             <input placeholder="Senha" type="password" style={styles.inputAuth} onChange={e => setForm({ ...form, senha: e.target.value })} required />
             <button type="submit" style={styles.btnPrimary}>CADASTRAR</button>
           </form>
-        </motion.div>
+        </Motion.div>
       </div>
     );
   }
