@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { motion, Reorder, AnimatePresence } from 'framer-motion';
+import { motion as Motion, Reorder, AnimatePresence } from 'framer-motion';
 
-const somAlerta = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+const _SOM_ALERTA = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
 function App() {
   const [entregas, setEntregas] = useState([]);
-  const [motoristas, setMotoristas] = useState([]);
+  const [motoristas, _setMotoristas] = useState([]);
   const [view, setView] = useState(window.innerWidth < 768 ? 'motorista' : 'gestor');
 
   // LOGIN E PERSISTÊNCIA (LEMBRAR SENHA)
@@ -20,6 +20,8 @@ function App() {
   };
 
   useEffect(() => {
+    // Chamamos buscarDados() intencionalmente no mount para popular entregas
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     buscarDados();
     const canal = supabase.channel('logistica_v10')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => buscarDados())
@@ -35,7 +37,7 @@ function App() {
       .from('entregas')
       .update({
         status: 'Concluído',
-        horario_conclusao: new Date().toISOString() 
+        horario_conclusao: new Date().toISOString()
       })
       .eq('id', id);
 
@@ -44,13 +46,13 @@ function App() {
     } else {
       // MENSAGEM DE SUCESSO A CADA ENTREGA
       const pendentesAtuais = entregas.filter(e => e.status === 'Pendente');
-      
+
       if (pendentesAtuais.length <= 1) {
         alert("🏆 Excelente! Você concluiu todas as entregas da sua rota!");
       } else {
         alert("✅ Entrega concluída com sucesso!");
       }
-      
+
       buscarDados();
     }
   };
@@ -89,6 +91,27 @@ function App() {
     }
   };
 
+  // --- GESTOR HELPERS ---
+  const [novoPedido, setNovoPedido] = useState({ cliente: '', endereco: '', motorista: '' });
+
+  const criarPedido = async (e) => {
+    e.preventDefault();
+    const { error } = await supabase.from('entregas').insert([{
+      cliente: novoPedido.cliente,
+      endereco: novoPedido.endereco,
+      motorista: novoPedido.motorista,
+      status: 'Pendente',
+      ordem: entregas.length + 1
+    }]);
+
+    if (error) {
+      alert("Erro ao criar pedido: " + error.message);
+    } else {
+      setNovoPedido({ cliente: '', endereco: '', motorista: '' });
+      buscarDados();
+    }
+  };
+
   // --- RESTANTE DO CÓDIGO MANTIDO EXATAMENTE IGUAL ---
   const acaoCadastro = async (e) => {
     e.preventDefault();
@@ -109,7 +132,7 @@ function App() {
   if (paginaInterna === 'cadastro' || paginaInterna === 'recuperar') {
     return (
       <div style={styles.universalPage}>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={styles.authCard}>
+        <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={styles.authCard}>
           <button onClick={() => setPaginaInterna('login')} style={styles.btnVoltar}>← Voltar</button>
           <form onSubmit={acaoCadastro} style={styles.flexCol}>
             <h2 style={styles.titleAuth}>Cadastro Motorista</h2>
@@ -202,24 +225,103 @@ function App() {
     );
   }
 
+  // --- DASHBOARD GESTOR (VISÃO DESKTOP) ---
   return (
     <div style={styles.dashBody}>
+      {/* BARRA LATERAL DE LANÇAMENTO */}
       <aside style={styles.sidebar}>
-        <h2>GESTOR</h2>
-        <button onClick={() => setView('motorista')} style={styles.btnPrimary}>VER MODO MOBILE</button>
+        <h2 style={{ color: '#38bdf8', marginBottom: '20px' }}>LOGÍSTICA V10</h2>
+
+        <form onSubmit={criarPedido} style={styles.formGestor}>
+          <h4 style={{ color: '#94a3b8', marginBottom: '10px' }}>Novo Lançamento</h4>
+          <input
+            placeholder="Nome do Cliente"
+            value={novoPedido.cliente}
+            onChange={e => setNovoPedido({ ...novoPedido, cliente: e.target.value })}
+            style={styles.inputDash} required
+          />
+          <input
+            placeholder="Endereço Completo"
+            value={novoPedido.endereco}
+            onChange={e => setNovoPedido({ ...novoPedido, endereco: e.target.value })}
+            style={styles.inputDash} required
+          />
+          <select
+            style={styles.inputDash}
+            value={novoPedido.motorista}
+            onChange={e => setNovoPedido({ ...novoPedido, motorista: e.target.value })}
+            required
+          >
+            <option value="">Selecionar Motorista</option>
+            {motoristas.map(m => <option key={m.id} value={m.nome}>{m.nome}</option>)}
+          </select>
+          <button type="submit" style={styles.btnDashEnviar}>ENVIAR PARA ROTA</button>
+        </form>
+
+        <button onClick={() => setView('motorista')} style={styles.btnSimular}>
+          📱 Simular Visão Celular
+        </button>
       </aside>
+
+      {/* PAINEL CENTRAL DE MONITORAMENTO */}
       <main style={styles.dashMain}>
-        <h1>Logística V10 - Painel de Controle</h1>
-        <p>Aqui você acompanha as entregas concluídas e os motivos de falha em tempo real.</p>
-        <div style={{ marginTop: '20px' }}>
-          <h3>Relatório de Ocorrências</h3>
-          {entregas.filter(e => e.status === 'Não Realizado').map(ent => (
-            <div key={ent.id} style={{ padding: '10px', backgroundColor: '#450a0a', borderRadius: '8px', marginBottom: '10px', borderLeft: '4px solid #ef4444' }}>
-              <strong>{ent.cliente}</strong>
-              <p style={{ margin: '5px 0', fontSize: '13px', color: '#fca5a5' }}>{ent.recado}</p>
-              <small>Horário: {ent.horario_conclusao ? new Date(ent.horario_conclusao).toLocaleTimeString() : '-'}</small>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h1>Monitoramento em Tempo Real</h1>
+          <div style={styles.cardFaturamento}>
+            <small>Status da Operação</small>
+            <div style={{ color: '#10b981', fontWeight: 'bold' }}>SISTEMA ONLINE</div>
+          </div>
+        </header>
+
+        <div style={styles.gridDash}>
+          {/* TABELA DE ENTREGAS ATIVAS */}
+          <section style={styles.secaoTabela}>
+            <h3>📦 Entregas na Rota</h3>
+            <div style={styles.tabelaContainer}>
+              <table style={styles.tabela}>
+                <thead>
+                  <tr>
+                    <th>Ordem</th>
+                    <th>Cliente</th>
+                    <th>Motorista</th>
+                    <th>Status</th>
+                    <th>Hora</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entregas.map(ent => (
+                    <tr key={ent.id}>
+                      <td>{ent.ordem}º</td>
+                      <td>{ent.cliente}</td>
+                      <td>{ent.motorista}</td>
+                      <td style={{ color: ent.status === 'Concluído' ? '#10b981' : '#fbbf24' }}>
+                        {ent.status}
+                      </td>
+                      <td>{ent.horario_conclusao ? new Date(ent.horario_conclusao).toLocaleTimeString() : '--:--'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
+          </section>
+
+          {/* RELATÓRIO DE OCORRÊNCIAS (FALHAS) */}
+          <section style={styles.secaoAlertas}>
+            <h3>⚠️ Motivos de Falha (Faltou)</h3>
+            <div style={styles.listaOcorrencias}>
+              {entregas.filter(e => e.status === 'Não Realizado').length === 0 ? (
+                <p style={{ color: '#475569' }}>Nenhuma falha registrada hoje.</p>
+              ) : (
+                entregas.filter(e => e.status === 'Não Realizado').map(ent => (
+                  <div key={ent.id} style={styles.cardFalha}>
+                    <strong>{ent.cliente}</strong>
+                    <p style={styles.motivoTexto}>{ent.recado}</p>
+                    <small>{new Date(ent.horario_conclusao).toLocaleTimeString()}</small>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
         </div>
       </main>
     </div>
@@ -253,9 +355,22 @@ const styles = {
   btnMapa: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #334155', background: 'none', color: '#fff' },
   radarContainer: { height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
   btnSair: { color: '#ef4444', border: '1px solid #ef4444', background: 'none', padding: '5px 10px', borderRadius: '8px', fontSize: '10px' },
-  dashBody: { display: 'flex', width: '100vw', height: '100vh', background: '#020617' },
-  sidebar: { width: '300px', padding: '30px', background: '#0f172a', borderRight: '1px solid #1e293b', color: '#fff' },
-  dashMain: { flex: 1, padding: '40px', color: '#fff' }
+  dashBody: { display: 'flex', width: '100vw', height: '100vh', background: '#020617', fontFamily: 'sans-serif' },
+  sidebar: { width: '300px', padding: '25px', background: '#0f172a', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column' },
+  formGestor: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  inputDash: { padding: '12px', borderRadius: '8px', background: '#020617', border: '1px solid #1e293b', color: '#fff' },
+  btnDashEnviar: { padding: '15px', borderRadius: '8px', border: 'none', background: '#38bdf8', fontWeight: 'bold', cursor: 'pointer' },
+  btnSimular: { marginTop: 'auto', background: 'none', border: '1px solid #334155', color: '#94a3b8', padding: '10px', borderRadius: '8px', cursor: 'pointer' },
+  dashMain: { flex: 1, padding: '40px', overflowY: 'auto', color: '#fff' },
+  gridDash: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '30px', marginTop: '30px' },
+  cardFaturamento: { padding: '15px', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', textAlign: 'right' },
+  secaoTabela: {},
+  tabelaContainer: { background: '#0f172a', borderRadius: '15px', padding: '20px', border: '1px solid #1e293b' },
+  tabela: { width: '100%', borderCollapse: 'collapse', textAlign: 'left' },
+  secaoAlertas: {},
+  listaOcorrencias: { marginTop: '10px' },
+  cardFalha: { padding: '15px', background: '#450a0a', borderRadius: '12px', borderLeft: '5px solid #ef4444', marginBottom: '10px' },
+  motivoTexto: { margin: '5px 0', fontSize: '14px', color: '#fca5a5' }
 };
 
 export default App;
