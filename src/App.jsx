@@ -26,31 +26,46 @@ function App() {
   }, []);
 
   // --- FUNÇÕES DE STATUS DA ENTREGA ---
-  
+
   const concluirEntrega = async (id) => {
+    // Usamos toISOString() para evitar o erro de sintaxe do timestamp
     const { error } = await supabase
       .from('entregas')
-      .update({ status: 'Concluído', horario_conclusao: new Date().toLocaleTimeString() })
+      .update({
+        status: 'Concluído',
+        horario_conclusao: new Date().toISOString()
+      })
       .eq('id', id);
-    
-    if (error) alert("Erro ao concluir: " + error.message);
-    else buscarDados();
+
+    if (error) {
+      alert("Erro ao concluir: " + error.message);
+    } else {
+      buscarDados();
+    }
   };
 
   const falhaEntrega = async (id) => {
-    const motivo = prompt("Digite o motivo da não entrega (ex: Endereço não encontrado, Cliente ausente):");
-    if (motivo) {
+    let motivo = prompt("Motivo da não entrega (Ex: Cliente ausente, Endereço errado):");
+
+    // Re-prompt enquanto o motivo não for nulo e possuir menos de 3 caracteres
+    while (motivo !== null && motivo.trim().length < 3) {
+      motivo = prompt("Por favor, descreva o motivo com pelo menos 3 caracteres (ou Cancelar para desistir):");
+    }
+
+    if (motivo !== null && motivo.trim().length >= 3) {
       const { error } = await supabase
         .from('entregas')
-        .update({ 
-          status: 'Não Realizado', 
-          recado: `MOTIVO FALHA: ${motivo}`,
-          horario_conclusao: new Date().toLocaleTimeString() 
+        .update({
+          status: 'Não Realizado',
+          recado: `FALHA: ${motivo.trim()}`, // Salva o motivo no campo recado
         })
         .eq('id', id);
-      
-      if (error) alert("Erro ao registrar falha: " + error.message);
-      else buscarDados();
+
+      if (error) {
+        alert("Erro ao registrar falha: " + error.message);
+      } else {
+        buscarDados();
+      }
     }
   };
 
@@ -179,14 +194,23 @@ function App() {
   // --- GESTOR ---
   return (
     <div style={styles.dashBody}>
-       <aside style={styles.sidebar}>
-         <h2>GESTOR</h2>
-         <button onClick={() => setView('motorista')} style={styles.btnPrimary}>VER MODO MOBILE</button>
-       </aside>
-       <main style={styles.dashMain}>
-         <h1>Logística V10 - Painel de Controle</h1>
-         <p>Aqui você acompanha as entregas concluídas e os motivos de falha em tempo real.</p>
-       </main>
+      <aside style={styles.sidebar}>
+        <h2>GESTOR</h2>
+        <button onClick={() => setView('motorista')} style={styles.btnPrimary}>VER MODO MOBILE</button>
+      </aside>
+      <main style={styles.dashMain}>
+        <h1>Logística V10 - Painel de Controle</h1>
+        <p>Aqui você acompanha as entregas concluídas e os motivos de falha em tempo real.</p>
+        <div style={{ marginTop: '20px' }}>
+          <h3>Relatório de Ocorrências</h3>
+          {entregas.filter(e => e.status === 'Não Realizado').map(ent => (
+            <div key={ent.id} style={{ padding: '10px', backgroundColor: '#450a0a', borderRadius: '8px', marginBottom: '10px', borderLeft: '4px solid #ef4444' }}>
+              <strong>{ent.cliente}</strong>
+              <p style={{ margin: '5px 0', fontSize: '13px', color: '#fca5a5' }}>{ent.recado}</p>
+              <small>Horário: {ent.horario_conclusao ? new Date(ent.horario_conclusao).toLocaleTimeString() : '-'}</small>
+            </div>
+          ))}
+        </div>      </main>
     </div>
   );
 }
