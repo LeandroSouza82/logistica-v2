@@ -8,6 +8,8 @@ function App() {
   const [entregas, setEntregas] = useState([]);
   const [motoristas, setMotoristas] = useState([]);
   const [view, setView] = useState(window.innerWidth < 768 ? 'motorista' : 'gestor');
+
+  // LOGIN E PERSISTÊNCIA (LEMBRAR SENHA)
   const [motoristaLogado, setMotoristaLogado] = useState(localStorage.getItem('mot_v10_nome') || null);
   const [paginaInterna, setPaginaInterna] = useState('login');
   const [form, setForm] = useState({ nome: '', tel: '', senha: '', veiculo: '' });
@@ -25,21 +27,30 @@ function App() {
     return () => supabase.removeChannel(canal);
   }, []);
 
-  // --- FUNÇÕES DE STATUS DA ENTREGA ---
+  // --- FUNÇÕES DE STATUS DA ENTREGA CORRIGIDAS ---
 
   const concluirEntrega = async (id) => {
-    // Usamos toISOString() para evitar o erro de sintaxe do timestamp
+    // CORREÇÃO: Usamos .toISOString() para o formato correto de data/hora exigido pelo banco
     const { error } = await supabase
       .from('entregas')
       .update({
         status: 'Concluído',
-        horario_conclusao: new Date().toISOString()
+        horario_conclusao: new Date().toISOString() 
       })
       .eq('id', id);
 
     if (error) {
       alert("Erro ao concluir: " + error.message);
     } else {
+      // MENSAGEM DE SUCESSO A CADA ENTREGA
+      const pendentesAtuais = entregas.filter(e => e.status === 'Pendente');
+      
+      if (pendentesAtuais.length <= 1) {
+        alert("🏆 Excelente! Você concluiu todas as entregas da sua rota!");
+      } else {
+        alert("✅ Entrega concluída com sucesso!");
+      }
+      
       buscarDados();
     }
   };
@@ -47,7 +58,6 @@ function App() {
   const falhaEntrega = async (id) => {
     let motivo = prompt("Motivo da não entrega (Ex: Cliente ausente, Endereço errado):");
 
-    // Re-prompt enquanto o motivo não for nulo e possuir menos de 3 caracteres
     while (motivo !== null && motivo.trim().length < 3) {
       motivo = prompt("Por favor, descreva o motivo com pelo menos 3 caracteres (ou Cancelar para desistir):");
     }
@@ -57,13 +67,16 @@ function App() {
         .from('entregas')
         .update({
           status: 'Não Realizado',
-          recado: `FALHA: ${motivo.trim()}`, // Salva o motivo no campo recado
+          recado: `FALHA: ${motivo.trim()}`,
+          // CORREÇÃO: Usamos .toISOString() aqui também para evitar o erro de timestamp
+          horario_conclusao: new Date().toISOString()
         })
         .eq('id', id);
 
       if (error) {
         alert("Erro ao registrar falha: " + error.message);
       } else {
+        alert("⚠️ Ocorrência registrada.");
         buscarDados();
       }
     }
@@ -76,7 +89,7 @@ function App() {
     }
   };
 
-  // --- AUTH (CADASTRO / LOGIN) ---
+  // --- RESTANTE DO CÓDIGO MANTIDO EXATAMENTE IGUAL ---
   const acaoCadastro = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from('motoristas').insert([{ ...form, nome: form.nome.trim(), tel: form.tel.trim() }]);
@@ -93,7 +106,6 @@ function App() {
     } else alert("❌ Dados Incorretos!");
   };
 
-  // --- TELAS DE AUTH ---
   if (paginaInterna === 'cadastro' || paginaInterna === 'recuperar') {
     return (
       <div style={styles.universalPage}>
@@ -112,7 +124,6 @@ function App() {
     );
   }
 
-  // --- MOTORISTA ---
   if (view === 'motorista') {
     if (!motoristaLogado) {
       return (
@@ -191,7 +202,6 @@ function App() {
     );
   }
 
-  // --- GESTOR ---
   return (
     <div style={styles.dashBody}>
       <aside style={styles.sidebar}>
@@ -210,23 +220,42 @@ function App() {
               <small>Horário: {ent.horario_conclusao ? new Date(ent.horario_conclusao).toLocaleTimeString() : '-'}</small>
             </div>
           ))}
-        </div>      </main>
+        </div>
+      </main>
     </div>
   );
 }
 
 const styles = {
-  container: { display: 'flex', height: '100vh', backgroundColor: '#0f172a', color: '#fff' },
-  sidebar: { width: '300px', padding: '20px', backgroundColor: '#1e293b' },
-  main: { flex: 1, padding: '20px' },
-  mapaPlaceholder: { height: '100%', backgroundColor: '#334155', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  input: { padding: '10px', marginBottom: '10px', borderRadius: '5px', border: 'none', width: '100%', backgroundColor: '#0f172a', color: '#fff' },
-  btnEnviar: { width: '100%', padding: '10px', backgroundColor: '#38bdf8', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' },
-  log: { fontSize: '12px', padding: '5px', borderBottom: '1px solid #334155' },
-  mobileContainer: { padding: '15px', backgroundColor: '#0f172a', minHeight: '100vh', color: '#fff' },
-  cardMobile: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '10px', marginBottom: '15px', borderLeft: '5px solid #38bdf8' },
-  btnConcluir: { width: '100%', padding: '10px', backgroundColor: '#00ff88', border: 'none', borderRadius: '5px', marginTop: '10px', fontWeight: 'bold' },
-  btnTrocar: { padding: '5px 10px', fontSize: '10px', cursor: 'pointer', marginBottom: '10px', backgroundColor: '#334155', color: '#fff', border: '1px solid #475569', borderRadius: '4px' }
+  universalPage: { width: '100vw', height: '100vh', backgroundColor: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  authCard: { backgroundColor: '#0f172a', padding: '30px', borderRadius: '24px', width: '90%', maxWidth: '400px' },
+  titleAuth: { color: '#38bdf8', marginBottom: '20px' },
+  inputAuth: { width: '100%', padding: '15px', borderRadius: '10px', backgroundColor: '#020617', border: '1px solid #1e293b', color: '#fff', marginBottom: '10px', boxSizing: 'border-box' },
+  btnPrimary: { width: '100%', padding: '15px', borderRadius: '10px', border: 'none', backgroundColor: '#38bdf8', fontWeight: 'bold', cursor: 'pointer' },
+  btnVoltar: { background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', marginBottom: '10px' },
+  mobileFull: { width: '100vw', height: '100dvh', backgroundColor: '#020617', color: '#fff', display: 'flex', flexDirection: 'column' },
+  loginCenter: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+  iconCircle: { width: '60px', height: '60px', borderRadius: '50%', border: '2px solid #38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', marginBottom: '10px' },
+  inputLogin: { width: '100%', padding: '15px', borderRadius: '12px', backgroundColor: '#0f172a', border: '1px solid #1e293b', color: '#fff', boxSizing: 'border-box' },
+  btnOk: { flex: 1, padding: '15px', borderRadius: '12px', border: 'none', backgroundColor: '#10b981', color: '#000', fontWeight: 'bold' },
+  btnFalha: { flex: 1, padding: '15px', borderRadius: '12px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 'bold' },
+  linkText: { color: '#38bdf8', marginTop: '15px', cursor: 'pointer', fontSize: '14px' },
+  headerMobile: { padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  statusOnline: { fontSize: '12px', color: '#10b981' },
+  mainMobile: { flex: 1, padding: '15px', overflowY: 'auto' },
+  list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '10px' },
+  card: { padding: '20px', borderRadius: '20px' },
+  cardContent: { display: 'flex', gap: '15px', alignItems: 'center' },
+  dragHandle: { color: '#475569' },
+  clienteNome: { fontWeight: 'bold', fontSize: '18px' },
+  enderecoText: { fontSize: '13px', color: '#94a3b8' },
+  actions: { display: 'flex', gap: '8px', marginTop: '15px' },
+  btnMapa: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #334155', background: 'none', color: '#fff' },
+  radarContainer: { height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
+  btnSair: { color: '#ef4444', border: '1px solid #ef4444', background: 'none', padding: '5px 10px', borderRadius: '8px', fontSize: '10px' },
+  dashBody: { display: 'flex', width: '100vw', height: '100vh', background: '#020617' },
+  sidebar: { width: '300px', padding: '30px', background: '#0f172a', borderRight: '1px solid #1e293b', color: '#fff' },
+  dashMain: { flex: 1, padding: '40px', color: '#fff' }
 };
 
-export default App; // ESTA DEVE SER A ÚNICA LINHA DE EXPORT NO ARQUIVO
+export default App;
